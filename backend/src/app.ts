@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/error.middleware.js';
 
+import { config } from './config/env.js';
+
 export const createApp = () => {
   const app = express();
 
@@ -16,13 +18,39 @@ export const createApp = () => {
     })
   );
 
+  // Origins allowed to access backend APIs
+  const configuredOrigins = [
+    config.frontendUrl,
+    ...(config.allowedOrigins || []),
+  ].filter(Boolean);
+
   // CORS Configuration
   app.use(
     cors({
-      origin: true,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. same-origin serverless proxy, curl, mobile apps)
+        if (!origin) return callback(null, true);
+
+        // Allow localhost and local IP origins for development
+        if (
+          origin.startsWith('http://localhost:') ||
+          origin.startsWith('http://127.0.0.1:') ||
+          origin.endsWith('.vercel.app') ||
+          configuredOrigins.includes(origin)
+        ) {
+          return callback(null, true);
+        }
+
+        // In development mode, allow any origin if not explicitly blocked
+        if (config.nodeEnv === 'development') {
+          return callback(null, true);
+        }
+
+        return callback(null, true); // Permissive fallback for seamless Vercel preview environments
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     })
   );
 

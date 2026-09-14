@@ -10,11 +10,12 @@ coverage/
 dist/
 build/
 
-# IDE and OS
+# IDE, OS, and Deployment
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+.vercel/
 *.pem
 
 # Local env files
