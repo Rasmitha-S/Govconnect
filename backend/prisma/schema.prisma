@@ -1,0 +1,378 @@
+// GovConnect SIH26129 - Prisma Relational Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User Accounts & Authentication
+model User {
+  id                   String            @id @default(uuid())
+  email                String            @unique
+  passwordHash         String
+  role                 String            @default("CITIZEN") // CITIZEN | OFFICER | CENTRAL_ADMIN
+  accountStatus        String            @default("ACTIVE") // ACTIVE | PENDING_APPROVAL | PENDING_VERIFICATION | SUSPENDED | REJECTED
+  organization         String?           // For Central Admin / Officer
+  employeeId           String?           // For Central Admin / Officer
+  approvedAt           DateTime?
+  approvedById         String?
+  rejectionReason      String?
+  isEmailVerified      Boolean           @default(false)
+  emailVerifyToken     String?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  lastLoginAt          DateTime?
+  citizenProfile       CitizenProfile?
+  officerProfile       OfficerProfile?
+  applications         Application[]
+  documents            Document[]
+  consents             Consent[]
+  digiLockerSessions   DigiLockerSession[]
+  notifications        Notification[]
+  grievances           Grievance[]
+  payments             Payment[]
+  auditLogs            AuditLog[]
+  securityEvents       SecurityEvent[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+}
+
+model CitizenProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName      String
+  mobile        String
+  address       String
+  aadhaarMasked String?  // e.g. "XXXX-XXXX-4819"
+  digilockerId  String?  // e.g. "DL-2026-8819"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model OfficerProfile {
+  id           String     @id @default(uuid())
+  userId       String     @unique
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName     String
+  designation  String
+  employeeCode String     @unique
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Department {
+  id           String           @id @default(uuid())
+  code         String           @unique // REVENUE, WATER, EDUCATION, HEALTH, TRANSPORT
+  name         String
+  description  String
+  contactEmail String
+  contactPhone String
+  active       Boolean          @default(true)
+  officers     OfficerProfile[]
+  services     Service[]
+  applications Application[]
+  grievances   Grievance[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model ServiceCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique // Water, Scholarship, Property / Land, Transport, Health, Certificates, Welfare
+  description String
+  icon        String
+  services    Service[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Service {
+  id                  String          @id @default(uuid())
+  serviceCode         String          @unique // e.g. WTR-001, SCH-001, PROP-001
+  name                String
+  categoryId          String
+  category            ServiceCategory @relation(fields: [categoryId], references: [id])
+  departmentId        String
+  department          Department      @relation(fields: [departmentId], references: [id])
+  description         String
+  eligibility         String
+  requiredDocuments   String          // JSON array string
+  steps               String          // JSON array string
+  officialPortalName  String
+  officialPortalURL   String
+  govconnectSupported        Boolean         @default(true)
+  trackingMode               String          @default("NATIVE") // NATIVE | INTEGRATED | EXTERNAL_ONLY
+  supportsDigiLockerAutofill Boolean         @default(false)
+  feeAmount                  Float           @default(0.0)
+  processingDays             Int             @default(7)
+  lastVerifiedDate           DateTime        @default(now())
+  applications               Application[]
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+}
+
+model Application {
+  id                  String                     @id @default(uuid())
+  applicationNumber   String                     @unique // e.g. APP-2026-00001
+  serviceId           String
+  service             Service                    @relation(fields: [serviceId], references: [id])
+  citizenId           String
+  citizen             User                       @relation(fields: [citizenId], references: [id])
+  departmentId        String
+  department          Department                 @relation(fields: [departmentId], references: [id])
+  status              String                     @default("SUBMITTED") // DRAFT | SUBMITTED | UNDER_VERIFICATION | CROSS_DEPARTMENT_CHECK | PENDING_APPROVAL | APPROVED | PAYMENT_PENDING | PROCESSING | COMPLETED | REJECTED
+  currentStep         String                     @default("Application Submitted")
+  priority            String                     @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  applicationType     String                     @default("NATIVE") // NATIVE | INTEGRATED | EXTERNAL_ONLY
+  externalPlatform    String?                    // e.g. PARIVAHAN, CPGRAMS, EPFO, PM_KISAN
+  externalReferenceId String?                    // e.g. PARI-MOCK-12345
+  externalStatus      String?                    // e.g. DOCUMENT_VERIFICATION_PENDING
+  lastSyncedAt        DateTime?
+  syncStatus          String                     @default("NOT_APPLICABLE") // NOT_APPLICABLE | NOT_CONFIGURED | SUCCESS | FAILED
+  rawFormData         String                     // JSON string of form inputs
+  standardizedData    String?                    // JSON string of normalized canonical data model
+  officerRemarks      String?
+  assignedOfficerId   String?
+  statusHistory       ApplicationStatusHistory[]
+  documents           Document[]
+  consents            Consent[]
+  workflow            Workflow?
+  payments            Payment[]
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@index([externalReferenceId])
+  @@index([externalPlatform])
+  @@index([status])
+}
+
+model ApplicationStatusHistory {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromStatus    String
+  toStatus      String
+  changedById   String?
+  changedByName String?
+  remarks       String?
+  createdAt     DateTime    @default(now())
+}
+
+model Document {
+  id                  String       @id @default(uuid())
+  applicationId       String?
+  application         Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  citizenId           String
+  citizen             User         @relation(fields: [citizenId], references: [id])
+  documentType        String       // PROPERTY_TAX_RECEIPT, AADHAAR_CARD, DIGILOCKER_CERT, INCOME_CERTIFICATE, OTHER
+  fileName            String
+  fileUrl             String
+  fileSize            Int
+  mimeType            String
+  isVerified          Boolean      @default(false)
+  verifiedByConnector String?      // e.g. "DigiLocker Mock Connector"
+  verificationNotes   String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model Consent {
+  id                  String           @id @default(uuid())
+  citizenId           String
+  citizen             User             @relation(fields: [citizenId], references: [id])
+  applicationId       String?
+  application         Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  dataSource          String           @default("GOVCONNECT") // DIGILOCKER | REVENUE | AADHAAR | GOVCONNECT
+  requestingDeptCode  String           // e.g. "WATER"
+  dataProviderDeptCode String          // e.g. "DIGILOCKER" or "REVENUE"
+  purpose             String           // e.g. "Verification of property ownership for municipal water connection"
+  dataFields          String           // JSON string: ["property_owner", "property_no", "tax_clearance_status"]
+  status              String           @default("GRANTED") // PENDING | GRANTED | DENIED | REVOKED | EXPIRED
+  grantedAt           DateTime?
+  revokedAt           DateTime?
+  expiresAt           DateTime?
+  history             ConsentHistory[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+model DigiLockerSession {
+  id                 String    @id @default(uuid())
+  citizenId          String
+  citizen            User      @relation(fields: [citizenId], references: [id], onDelete: Cascade)
+  serviceCode        String
+  stateToken         String    @unique
+  codeVerifier       String?
+  requestedData      String    // JSON array of requested scopes
+  purpose            String
+  status             String    @default("INITIATED") // INITIATED | AUTHORIZED | DENIED | EXPIRED | CONSUMED
+  integrationMode    String    @default("REPRESENTATIVE") // REAL_AUTHORIZED | REPRESENTATIVE | NOT_CONFIGURED
+  externalReference  String?   // DigiLocker transaction reference or authorization grant id
+  returnUrl          String?   // Application form path to redirect back to
+  standardizedData   String?   // JSON object of standardized fields
+  retrievedDocuments String?   // JSON array of retrieved document references
+  expiresAt          DateTime
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([citizenId])
+  @@index([stateToken])
+}
+
+model ConsentHistory {
+  id        String   @id @default(uuid())
+  consentId String
+  consent   Consent  @relation(fields: [consentId], references: [id], onDelete: Cascade)
+  action    String   // GRANTED | DENIED | REVOKED | EXPIRED | ACCESSED
+  actorId   String
+  ipAddress String?
+  userAgent String?
+  remarks   String?
+  createdAt DateTime @default(now())
+}
+
+model Workflow {
+  id            String         @id @default(uuid())
+  applicationId String         @unique
+  application   Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  currentStage  Int            @default(1)
+  totalStages   Int            @default(6)
+  isCompleted   Boolean        @default(false)
+  startedAt     DateTime       @default(now())
+  completedAt   DateTime?
+  steps         WorkflowStep[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model WorkflowStep {
+  id                  String    @id @default(uuid())
+  workflowId          String
+  workflow            Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stageNumber         Int
+  stageName           String    // "Submission", "Identity Verification", "Property Verification", "Document Verification", "Officer Approval", "Payment", "Completed"
+  departmentCode      String    // "CITIZEN", "AADHAAR", "REVENUE", "DIGILOCKER", "WATER", "TREASURY"
+  status              String    @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | FAILED | SKIPPED
+  connectorName       String?   // "Aadhaar Mock Connector", "Revenue Mock Connector", etc.
+  executionDurationMs Int?
+  requestPayload      String?   // JSON
+  responsePayload     String?   // JSON
+  errorMessage        String?
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+}
+
+model Connector {
+  id             String             @id @default(uuid())
+  code           String             @unique // AADHAAR, DIGILOCKER, REVENUE, WATER, EDUCATION, HEALTH, TRANSPORT, PAYMENT
+  name           String
+  type           String             // REST | SOAP_LEGACY | DATABASE_DIRECT
+  description    String
+  status         String             @default("HEALTHY") // HEALTHY | DEGRADED | OFFLINE
+  healthStatus   String             @default("OPERATIONAL")
+  avgLatencyMs   Int                @default(120)
+  totalRequests  Int                @default(0)
+  errorCount     Int                @default(0)
+  lastHealthCheck DateTime          @default(now())
+  simulatedMode  String             @default("MOCK_SIMULATION")
+  failureRate    Float              @default(0.0) // 0.0 to 1.0 for chaos / failure demo
+  requests       ConnectorRequest[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model ConnectorRequest {
+  id              String    @id @default(uuid())
+  connectorId     String
+  connector       Connector @relation(fields: [connectorId], references: [id])
+  applicationId   String?
+  operation       String    // e.g. "FETCH_PROPERTY_RECORDS", "VERIFY_IDENTITY"
+  requestPayload  String?   // JSON
+  responsePayload String?   // JSON
+  statusCode      Int       @default(200)
+  latencyMs       Int       @default(150)
+  success         Boolean   @default(true)
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+}
+
+model Notification {
+  id                   String    @id @default(uuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                String
+  message              String
+  type                 String    // APPLICATION_SUBMITTED | VERIFICATION_COMPLETED | APPROVAL_REQUIRED | APPLICATION_APPROVED | APPLICATION_REJECTED | PAYMENT_CONFIRMED | SERVICE_COMPLETED | SECURITY_EVENT | GRIEVANCE_UPDATED
+  isRead               Boolean   @default(false)
+  readAt               DateTime?
+  relatedApplicationId String?
+  createdAt            DateTime  @default(now())
+}
+
+model Grievance {
+  id                String     @id @default(uuid())
+  grievanceNumber   String     @unique // e.g. GRV-2026-00001
+  citizenId         String
+  citizen           User       @relation(fields: [citizenId], references: [id])
+  departmentId      String
+  department        Department @relation(fields: [departmentId], references: [id])
+  category          String     // "Water Billing", "Pipeline Leakage", "Service Delay", etc.
+  description       String
+  status            String     @default("SUBMITTED") // SUBMITTED | IN_PROGRESS | RESOLVED | REJECTED
+  priority          String     @default("MEDIUM")
+  assignedOfficerId String?
+  resolutionRemarks String?
+  resolvedAt        DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model Payment {
+  id                String      @id @default(uuid())
+  transactionNumber String      @unique // e.g. TXN-SIM-2026-00001
+  applicationId     String
+  application       Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  citizenId         String
+  citizen           User        @relation(fields: [citizenId], references: [id])
+  amount            Float
+  currency          String      @default("INR")
+  status            String      @default("SUCCESS") // PENDING | SUCCESS | FAILED
+  paymentMethod     String      @default("SIMULATED_UPI") // SIMULATED_UPI | SIMULATED_NETBANKING | TREASURY_CHALLAN
+  gatewayResponse   String?     // JSON
+  paidAt            DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorEmail String?
+  actorRole  String?
+  user       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String   // "USER_REGISTER", "USER_LOGIN", "CONSENT_GRANTED", "PROPERTY_VERIFIED", "APPLICATION_APPROVED", etc.
+  entity     String   // "User", "Application", "Consent", "Connector", "Payment", etc.
+  entityId   String?
+  details    String?  // JSON string (sanitized, zero secrets)
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid())
+  eventType String   // "NEW_LOGIN", "FAILED_LOGIN", "PASSWORD_RESET_REQ", "PASSWORD_CHANGED", "UNAUTHORIZED_DEPT_ACCESS"
+  userId    String?
+  userEmail String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ipAddress String?
+  userAgent String?
+  severity  String   @default("INFO") // INFO | WARNING | CRITICAL
+  details   String?
+  createdAt DateTime @default(now())
+}

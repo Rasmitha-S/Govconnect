@@ -1,0 +1,15 @@
+{
+  "name": "govconnect-platform",
+  "version": "1.0.0",
+  "description": "GovConnect SIH26129 - Unified Government Service Interoperability Platform",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "test": "npm --prefix backend run test",
+    "seed": "npm --prefix backend run prisma:seed"
+  },
+  "keywords": ["sih2026", "govconnect", "interoperability", "e-governance"],
+  "author": "GovConnect SIH Team",
+  "license": "MIT"
+}
