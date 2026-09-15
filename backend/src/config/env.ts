@@ -1,7 +1,13 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
+// Multi-path dotenv resolution (supports root, backend/, and Vercel execution contexts)
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'backend', '.env') });
+if (typeof __dirname !== 'undefined') {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+}
 dotenv.config();
 
 export const config = {
